@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DSEG7+Classic:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="toolbar">
+      <button class="icon-btn" id="btn-size-down" title="Smaller" aria-label="Decrease size">−</button>
+      <button class="icon-btn" id="btn-size-up" title="Larger" aria-label="Increase size">+</button>
+      <button class="icon-btn" id="btn-dashboard" title="Dashboard" aria-label="Dashboard">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 3H3v5M16 3h5v5M16 21h5v-5M8 21H3v-5"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="timer-view">
+      <div class="display-wrap">
+        <div id="display" class="display" aria-live="polite">00:00:00</div>
+      </div>
+
+      <div id="setup-panel" class="setup-panel">
+        <div class="time-inputs">
+          <label>
+            <span>H</span>
+            <input type="number" id="input-hours" min="0" max="99" value="0">
+          </label>
+          <span class="colon">:</span>
+          <label>
+            <span>M</span>
+            <input type="number" id="input-minutes" min="0" max="59" value="5">
+          </label>
+          <span class="colon">:</span>
+          <label>
+            <span>S</span>
+            <input type="number" id="input-seconds" min="0" max="59" value="0">
+          </label>
+        </div>
+      </div>
+
+      <nav class="controls">
+        <button id="btn-primary" class="ctrl-btn">Start</button>
+        <button id="btn-reset" class="ctrl-btn subtle" disabled>Reset</button>
+        <button id="btn-stop" class="ctrl-btn subtle" disabled>Stop</button>
+      </nav>
+    </main>
+
+    <aside id="dashboard" class="dashboard hidden" aria-hidden="true">
+      <div class="dashboard-inner">
+        <div class="dashboard-header">
+          <h2>Daily Summary</h2>
+          <button class="icon-btn" id="btn-close-dashboard" aria-label="Close">×</button>
+        </div>
+        <div id="dashboard-content" class="dashboard-content"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
