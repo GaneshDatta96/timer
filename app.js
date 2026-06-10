@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'timer-app-data';
 const PREFS_KEY = 'timer-app-prefs';
+const ACTIVE_TIMER_KEY = 'timer-app-active';
 
 const MIN_SIZE = 8;
 const MAX_SIZE = 40;
@@ -9,6 +10,8 @@ const state = {
   mode: 'idle', // idle | running | paused | finished
   totalSeconds: 0,
   remainingSeconds: 0,
+  endAt: null,
+  pausedRemainingMs: null,
   intervalId: null,
   runStartedAt: null,
   lastRunEndedAt: null,
@@ -83,6 +86,105 @@ function updateDisplay() {
   els.display.textContent = formatTime(state.remainingSeconds);
 }
 
+function getRemainingSeconds() {
+  if (state.mode === 'running' && state.endAt) {
+    return Math.max(0, Math.ceil((state.endAt - Date.now()) / 1000));
+  }
+  if (state.pausedRemainingMs != null) {
+    return Math.ceil(state.pausedRemainingMs / 1000);
+  }
+  return state.remainingSeconds;
+}
+
+function saveActiveTimer() {
+  if (state.mode === 'running' && state.endAt) {
+    sessionStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
+      endAt: state.endAt,
+      totalSeconds: state.totalSeconds,
+      runStartedAt: state.runStartedAt,
+    }));
+  } else if (state.mode === 'paused') {
+    sessionStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
+      paused: true,
+      pausedRemainingMs: state.pausedRemainingMs,
+      totalSeconds: state.totalSeconds,
+      runStartedAt: state.runStartedAt,
+    }));
+  } else {
+    sessionStorage.removeItem(ACTIVE_TIMER_KEY);
+  }
+}
+
+function clearActiveTimer() {
+  sessionStorage.removeItem(ACTIVE_TIMER_KEY);
+}
+
+function startInterval() {
+  clearInterval(state.intervalId);
+  state.intervalId = setInterval(syncTimer, 250);
+}
+
+function finishTimer() {
+  clearInterval(state.intervalId);
+  state.intervalId = null;
+  state.endAt = null;
+  state.pausedRemainingMs = null;
+  state.remainingSeconds = 0;
+  clearActiveTimer();
+  updateDisplay();
+  setMode('finished');
+  playAlarm();
+  recordRun(state.totalSeconds);
+}
+
+function syncTimer() {
+  if (state.mode !== 'running') return;
+
+  state.remainingSeconds = getRemainingSeconds();
+  updateDisplay();
+
+  if (state.remainingSeconds <= 0) {
+    finishTimer();
+  }
+}
+
+function restoreActiveTimer() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(ACTIVE_TIMER_KEY));
+    if (!saved) return;
+
+    state.totalSeconds = saved.totalSeconds;
+    state.runStartedAt = saved.runStartedAt;
+
+    if (saved.paused) {
+      state.pausedRemainingMs = saved.pausedRemainingMs;
+      state.remainingSeconds = Math.ceil(saved.pausedRemainingMs / 1000);
+      setMode('paused');
+      updateDisplay();
+      return;
+    }
+
+    if (!saved.endAt) return;
+
+    state.endAt = saved.endAt;
+    const remaining = Math.max(0, Math.ceil((saved.endAt - Date.now()) / 1000));
+
+    if (remaining <= 0) {
+      state.remainingSeconds = 0;
+      updateDisplay();
+      finishTimer();
+      return;
+    }
+
+    state.remainingSeconds = remaining;
+    setMode('running');
+    updateDisplay();
+    startInterval();
+  } catch {
+    clearActiveTimer();
+  }
+}
+
 function setDisplaySize(size) {
   const clamped = Math.min(MAX_SIZE, Math.max(MIN_SIZE, size));
   document.documentElement.style.setProperty('--display-size', `${clamped}vw`);
@@ -153,13 +255,14 @@ function recordRun(durationSeconds) {
 
 function recordCancelledRun() {
   if (!state.runStartedAt) return;
+  const remaining = getRemainingSeconds();
   const data = loadData();
   data.runs.push({
     id: crypto.randomUUID(),
     date: dateKey(Date.now()),
     startedAt: state.runStartedAt,
     endedAt: Date.now(),
-    durationSeconds: state.totalSeconds - state.remainingSeconds,
+    durationSeconds: state.totalSeconds - remaining,
     completed: false,
   });
   saveData(data);
@@ -220,19 +323,6 @@ function setMode(mode) {
   els.inputSeconds.disabled = mode === 'running';
 }
 
-function tick() {
-  if (state.remainingSeconds <= 0) {
-    clearInterval(state.intervalId);
-    state.intervalId = null;
-    setMode('finished');
-    playAlarm();
-    recordRun(state.totalSeconds);
-    return;
-  }
-  state.remainingSeconds--;
-  updateDisplay();
-}
-
 function startTimer() {
   const seconds = getSelectedSeconds();
   if (seconds <= 0) return;
@@ -240,21 +330,33 @@ function startTimer() {
   state.totalSeconds = seconds;
   state.remainingSeconds = seconds;
   state.runStartedAt = Date.now();
+  state.endAt = Date.now() + seconds * 1000;
+  state.pausedRemainingMs = null;
   updateDisplay();
   setMode('running');
-
-  state.intervalId = setInterval(tick, 1000);
+  startInterval();
+  saveActiveTimer();
 }
 
 function pauseTimer() {
+  if (state.endAt) {
+    state.pausedRemainingMs = Math.max(0, state.endAt - Date.now());
+    state.remainingSeconds = Math.ceil(state.pausedRemainingMs / 1000);
+    state.endAt = null;
+  }
   clearInterval(state.intervalId);
   state.intervalId = null;
+  updateDisplay();
   setMode('paused');
+  saveActiveTimer();
 }
 
 function resumeTimer() {
+  state.endAt = Date.now() + state.pausedRemainingMs;
+  state.pausedRemainingMs = null;
   setMode('running');
-  state.intervalId = setInterval(tick, 1000);
+  startInterval();
+  saveActiveTimer();
 }
 
 function stopTimer() {
@@ -262,7 +364,10 @@ function stopTimer() {
   state.intervalId = null;
   recordCancelledRun();
   state.runStartedAt = null;
+  state.endAt = null;
+  state.pausedRemainingMs = null;
   state.remainingSeconds = state.totalSeconds;
+  clearActiveTimer();
   updateDisplay();
   setMode('idle');
   els.setupPanel.classList.remove('hidden');
@@ -272,8 +377,11 @@ function resetTimer() {
   clearInterval(state.intervalId);
   state.intervalId = null;
   state.runStartedAt = null;
+  state.endAt = null;
+  state.pausedRemainingMs = null;
   state.totalSeconds = getSelectedSeconds();
   state.remainingSeconds = state.totalSeconds;
+  clearActiveTimer();
   updateDisplay();
   setMode('idle');
   els.setupPanel.classList.remove('hidden');
@@ -281,8 +389,11 @@ function resetTimer() {
 
 function newTimer() {
   state.runStartedAt = null;
+  state.endAt = null;
+  state.pausedRemainingMs = null;
   state.totalSeconds = 0;
   state.remainingSeconds = 0;
+  clearActiveTimer();
   els.display.textContent = formatTime(getSelectedSeconds());
   setMode('idle');
   els.setupPanel.classList.remove('hidden');
@@ -354,8 +465,16 @@ document.addEventListener('keydown', (e) => {
   });
 });
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncTimer();
+});
+
+window.addEventListener('focus', syncTimer);
+window.addEventListener('pageshow', syncTimer);
+
 const prefs = loadPrefs();
 setDisplaySize(prefs.displaySize);
 state.remainingSeconds = getSelectedSeconds();
 updateDisplay();
-setMode('idle');
+restoreActiveTimer();
+if (state.mode === 'idle') setMode('idle');
